@@ -5,12 +5,13 @@ CIS-5200 Machine Learning final project
 Models are put under the ``models`` directory.
 
 ## About experiments
-Experiment scripts should be separate from models.
-They can import from models.
+Experiment scripts are under the ``scripts`` directory,
+separate from models. They can import from models.
 
 ## About datasets
-Datasets should be put under the ``datasets`` directory
+Datasets are under the ``datasets`` directory
 on your local machine, using symbolic link when necessary.
 
-Do not actually upload the datasets to GitHub.
+Please do not actually upload the datasets to GitHub.
+By default, anything under ``datasets`` will be ignored.
 
