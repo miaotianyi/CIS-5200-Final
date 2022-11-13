@@ -1,3 +1,7 @@
+# datasets
+datasets/*
+!datasets/.gitkeep
+
 # PyCharm
 .idea
 
