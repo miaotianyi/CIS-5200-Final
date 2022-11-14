@@ -37,11 +37,12 @@ class MSConv2d(nn.Module):
     ``[n, c_out]`` tensors, which are broadcastable. Then add these output
     tensors as the final output of this module.
     This is mathematically equivalent to solution 3.
+    This is implemented in this class.
     """
     def __init__(self, in_channels, out_channels, kernel_size,
-                stride=1, padding=0, dilation=1,
-                groups=1, bias=True, padding_mode="zeros",
-                device=None, dtype=None):
+                 stride=1, padding=0, dilation=1,
+                 groups=1, bias=True, padding_mode="zeros",
+                 device=None, dtype=None):
         super(MSConv2d, self).__init__()
         # initialize hyperparameters
         self.in_channels = tuple(in_channels)
