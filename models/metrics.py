@@ -30,8 +30,8 @@ def soft_dice_loss(y_true, y_pred, epsilon=1e-6, reduction="sum"):
     axes = tuple(range(2, y_true.ndim))     # sum over spatial dimensions
     numerator = 2 * (y_pred * y_true).sum(axes)
     denominator = (y_pred ** 2).sum(axes) + (y_true ** 2).sum(axes)
-    # sum over channel axis
-    loss_list = (numerator / denominator.clamp(min=epsilon)).sum(1)
+    # sum over channel axis; use (1 - Dice) as loss
+    loss_list = (1 - numerator / denominator.clamp(min=epsilon)).sum(1)
     # reduce over sample axis
     if reduction == "mean":
         return loss_list.mean()
