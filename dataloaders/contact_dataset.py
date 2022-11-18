@@ -6,14 +6,9 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import pandas as pd
 
-# import bagpy
-# from bagpy import bagreader
-import rosbag
-# import rosbag_pandas.src.rosbag_pandas
 import yaml
 
 import skimage
-# import PIL
 import torchvision
 import cv2
 
@@ -22,42 +17,21 @@ import natsort
 
 import math
 
-import imgaug as ia
-import imgaug.augmenters as iaa
-
 import pickle
 class ContactDataset(Dataset):
-    """
-
-    """
     # if window_size = -1, produce the full episode !
-    def __init__(self, bag_path, window_size, obj_name, standardize_ft_pose=False, prob_pxl_drop=None, is_real_dataset=False, 
-    cam_bag_path=None, dyn_cam = False, calib_FT=False, im_time_offset=0.1, max_depth_clip=2.0, max_num_contact=20, 
-    clump_contact=False, contact_clump_dt=0.05, contact_persist_time=0.002, in_cam_frame=True, 
-    im_resize=None, centered=False, proprio_history_dict=None, blur_contact_prob_dict=None, load_in_mem=True):
+    def __init__(self, bag_path, window_size, obj_name, standardize_ft_pose=False, 
+    calib_FT=False, im_time_offset=0.1, max_depth_clip=2.0, max_num_contact=20, 
+    contact_persist_time=0.002, in_cam_frame=True, 
+    im_resize=None, centered=False, proprio_history_dict=None, blur_contact_prob_dict=None):
         self.proprio_history_dict = proprio_history_dict
         self.standardize_ft_pose = standardize_ft_pose
-        # self.rosbag = None
-        self.is_real_dataset = is_real_dataset
-        if cam_bag_path is not None:
-            self.cam_bag_path = os.path.expanduser(cam_bag_path)
-            if not os.path.exists(self.cam_bag_path):
-                raise AssertionError('bag path does not exist')
-        self.dyn_cam = dyn_cam
+       
         self.calib_FT = calib_FT
-        if self.is_real_dataset:
-            self.calib_FT = False
-
-        self.load_in_mem = load_in_mem
         self.max_depth_clip = max_depth_clip
-
         self.im_time_offset = im_time_offset
-
         self.max_num_contact = max_num_contact
-
         self.contact_persist_time = contact_persist_time
-        self.contact_clump_dt = contact_clump_dt 
-        self.clump_contact = clump_contact 
 
         if blur_contact_prob_dict is None:
             self.blur_contact_prob_dict = {'enable': False} 
@@ -70,22 +44,10 @@ class ContactDataset(Dataset):
         if not os.path.exists(self.bag_path):
             raise AssertionError('bag path does not exist')
         
-        if os.path.exists(os.path.join(self.bag_path.strip('.bag'), 'tot_bag_dict.pickle')) and not self.is_real_dataset:
-            with open(os.path.join(self.bag_path.strip('.bag'), 'tot_bag_dict.pickle'), 'rb') as handle:
-                print('loaded info dict from pickle file!!')
-                self.info_dict =  pickle.load(handle)
-        else:
-            print('couldnt find dataset dict pickle!')
-
-            try:
-                self.bag = rosbag.Bag(bag_path, "r")
-            except:
-                print('reading bag ' + bag_path + ' failed!')
-                raise 
-            
-            self.info_dict = yaml.safe_load(self.bag._get_yaml_info())
-
-            del self.bag ## delete rosbag from memory since we dont need it anymore!
+        assert os.path.exists(os.path.join(self.bag_path.strip('.bag'), 'tot_bag_dict.pickle')), 'tot_bag_dict.pickle does not exist' 
+        with open(os.path.join(self.bag_path.strip('.bag'), 'tot_bag_dict.pickle'), 'rb') as handle:
+            print('loaded info dict from pickle file!!')
+            self.info_dict =  pickle.load(handle)
 
         for topic_dict in self.info_dict['topics']:
             # print(topic_dict)
@@ -100,30 +62,6 @@ class ContactDataset(Dataset):
                 self.depth_num_msgs = topic_dict['messages']
             else:
                 pass
-        
-        if cam_bag_path is not None:
-            try:
-                self.cam_bag = rosbag.Bag(self.cam_bag_path, "r")
-            except:
-                print('reading bag ' + cam_bag_path + ' failed!')
-                raise 
-            
-            self.cam_info_dict = yaml.safe_load(self.cam_bag._get_yaml_info())
-    
-            del self.cam_bag ## delete rosbag from memory since we dont need it anymore!
-
-            for topic_dict in self.cam_info_dict['topics']:
-                if 'contact_data' in topic_dict['topic']:
-                    self.contact_freq = topic_dict['frequency']
-                    self.contact_num_msgs = topic_dict['messages']
-                elif 'franka_states' in topic_dict['topic']:
-                    self.robot_state_freq = topic_dict.get('frequency', -1.0) #default -1 when key not avail
-                    self.proprio_num_msgs = topic_dict['messages']
-                elif 'depth' in topic_dict['topic']:
-                    self.image_freq = topic_dict['frequency']
-                    self.depth_num_msgs = topic_dict['messages']
-                else:
-                    pass
 
         self.main_topic = '/panda/franka_state_controller_custom/franka_states'
 
@@ -145,11 +83,10 @@ class ContactDataset(Dataset):
         self.im_shape = cv2.imread(self.im_path_list[0]).shape[:2]
         self.in_cam_frame = in_cam_frame
 
-        if not self.dyn_cam:
-            if self.im_type == 'depth':
-                self.depth_tf_world = np.load(os.path.join(self.im_path, 'D_tf_W.npy'))
-            elif self.im_type == 'aligned_depth_to_color':
-                self.depth_tf_world = np.load(os.path.join(self.im_path, 'C_tf_W.npy'))
+        if self.im_type == 'depth':
+            self.depth_tf_world = np.load(os.path.join(self.im_path, 'D_tf_W.npy'))
+        elif self.im_type == 'aligned_depth_to_color':
+            self.depth_tf_world = np.load(os.path.join(self.im_path, 'C_tf_W.npy'))
         
         self.K_cam = np.load(os.path.join(self.im_path, 'depth_K.npy'))
     
@@ -163,8 +100,7 @@ class ContactDataset(Dataset):
         self.color_path_list = natsort.natsorted(glob.glob(os.path.join(self.color_path, '*.png')))
         self.color_shape = cv2.imread(self.color_path_list[0]).shape[:2]
 
-        if not self.dyn_cam:
-            self.color_tf_world = np.load(os.path.join(self.color_path, 'C_tf_W.npy'))
+        self.color_tf_world = np.load(os.path.join(self.color_path, 'C_tf_W.npy'))
         self.K_color = np.load(os.path.join(self.color_path, 'color_K.npy'))
     
         assert self.depth_num_msgs == len(self.im_times), 'bag depth num msgs does not match depth timestamp length!'
@@ -193,8 +129,6 @@ class ContactDataset(Dataset):
             topic = self.base_proprio_topic + 'O_T_EE/' + str(i)
             self.pose_topics.append(topic)
         
-        # 'EE_T_K'
-
         # to add EE vel??
         self.EE_vel_topics = []
         for i in range(6):
@@ -218,34 +152,25 @@ class ContactDataset(Dataset):
         self.im_to_tensor = torchvision.transforms.ToTensor() 
         self.tensor_to_float32 = torchvision.transforms.ConvertImageDtype(torch.float32)
 
-        self.prob_pxl_drop = prob_pxl_drop
-        if prob_pxl_drop is not None:
-            self.dropout_fn = iaa.Dropout(p=prob_pxl_drop)
-            ia.seed(0)
+        ## read the label
+        self.contact_dt = 1./self.contact_freq
 
-        if load_in_mem:
-            ## read the label
-            if not self.is_real_dataset: #contact data only avail in sim!
-                self.contact_dt = 1./self.contact_freq
+        self.contact_df = pd.read_pickle(os.path.join(bag_path.strip('.bag'), 'contact_df.pkl'))
+    
+        ## need to filter out all rows where none of the contact state collision names have the object name
+        ## this is in order for the no contact estimation heuristic to work 
+        collision_df = self.contact_df.loc[:, self.contact_df.columns.str.contains('collision')]
+        self.contact_filtered_df = self.contact_df[collision_df.astype(str).sum(axis=1).str.contains(obj_name)]
 
-                self.contact_df = pd.read_pickle(os.path.join(bag_path.strip('.bag'), 'contact_df.pkl'))
-            
-                ## need to filter out all rows where none of the contact state collision names have the object name
-                ## this is in order for the no contact estimation heuristic to work 
-                collision_df = self.contact_df.loc[:, self.contact_df.columns.str.contains('collision')]
-                self.contact_filtered_df = self.contact_df[collision_df.astype(str).sum(axis=1).str.contains(obj_name)]
+        ## get features
+        ## images
+        self.depth_times = np.load(os.path.join(self.im_path, 'timestamps.npy'), allow_pickle=True)
 
-            ## get features
-            ## images
-            self.depth_times = np.load(os.path.join(self.im_path, 'timestamps.npy'), allow_pickle=True)
+        ## proprio
+        self.proprio_df = pd.read_pickle(os.path.join(bag_path.strip('.bag'), 'proprio_df.pkl'))
 
-            ## proprio
-            self.proprio_df = pd.read_pickle(os.path.join(bag_path.strip('.bag'), 'proprio_df.pkl'))
-
-            if (self.dyn_cam or self.calib_FT) and not self.is_real_dataset:
-                self.ep_info_df = pd.read_pickle(os.path.join(bag_path.strip('.bag'), 'ep_info_df.pkl'))
-
-        # print('succesfully loaded bag!')
+        if self.calib_FT:
+            self.ep_info_df = pd.read_pickle(os.path.join(bag_path.strip('.bag'), 'ep_info_df.pkl'))
 
     def __len__(self):
         return self._len
@@ -278,11 +203,6 @@ class ContactDataset(Dataset):
         # print(images_normalized.shape)
 
         # expects np array of dim N x H x W x C
-        if self.prob_pxl_drop is not None:
-            images_normalized = np.squeeze(self.dropout_fn(images=np.expand_dims(images_normalized, axis=-1)), axis = -1) # return back image of dim N x H x W
-        else:
-            images_normalized = images_normalized
-
         im_times = self.im_times[start_idx:end_idx]
         # im_max_vals = np.amax(images_np, axis=(-2, -1))
 
@@ -292,17 +212,8 @@ class ContactDataset(Dataset):
         color_im_paths = [self.color_path_list[idx] for idx in nrst_color_idxs]
 
         # get nearest extrinsics
-        if self.dyn_cam:
-            depth_tf_world = self.get_inv_cam_extrin(im_times, depth=True)
-        else:
-            depth_tf_world = self.depth_tf_world
+        depth_tf_world = self.depth_tf_world
 
-        # get nearest proprio values
-        ##  get poses
-        ## convert affine tfs to poses
-        # print(im_times)
-        # print(self.proprio_df.index)
-      
         nrst_proprio_idxs = self.get_nearest_idxs(im_times, self.proprio_df.index)
         nrst_tfs_np = np.array(self.proprio_df.iloc[nrst_proprio_idxs][self.pose_topics].values)
         nrst_poses_np = []
@@ -341,170 +252,111 @@ class ContactDataset(Dataset):
             if self.in_cam_frame:
                 tfed_nrst_wrench_np = []
                 for i in range(nrst_wrench_np.shape[0]):
-                    # print(tfs_np[i])
                     wrench = nrst_wrench_np[i]
                     R = depth_tf_world[:3, :3]
                     wrench = np.concatenate((R@wrench[:3], R@wrench[3:]))
                     tfed_nrst_wrench_np.append(wrench)
                 nrst_wrench_np = np.array(tfed_nrst_wrench_np)
         
-        if not self.is_real_dataset: #contact data only avail in sim!
-            # get target contact label
-            contact_time_label = self.get_contact_time_label(im_times, centered=self.centered)
-            # print(contact_idx)
+        # get target contact label
+        contact_time_label = self.get_contact_time_label(im_times, centered=self.centered)
+        
+        # no longer accepts a list of image times
+        contact_dict = self.get_contact_data(contact_time_label, self.contact_dt, self.contact_filtered_df)
+        
+        # output the contact location prob map
+        # output the contact forces map
+
+        if not self.im_resize:
+            contact_prob_map = np.zeros(self.im_shape)
+            contact_force_map = np.zeros((3,) + self.im_shape) #3 x H x W
+            contact_normal_map = np.zeros((3,) + self.im_shape)
+        else: 
+            contact_prob_map = np.zeros(self.im_resize)
+            contact_force_map = np.zeros((3,) + self.im_resize) #fx,fy,fz
+            contact_normal_map = np.zeros((3,) + self.im_resize) #fx,fy,fz
+        
+        contact_pxls = []
+
+        if contact_dict['num_contacts'] != 0:
+            for idx in range(contact_dict['num_contacts']): 
+                contact_pos = contact_dict['positions'][idx]
+                contact_force = contact_dict['wrenches'][idx][:3]
+                contact_torque = contact_dict['wrenches'][idx][3:]
+                contact_normal = contact_dict['normals'][idx]
+
+                contact_pos_prj = self.point_proj(self.K_cam, depth_tf_world, contact_pos)
+
+                if self.in_cam_frame:
+                    R = depth_tf_world[:3, :3]
+                    contact_pos = (depth_tf_world @ np.concatenate((contact_pos, np.array([1]))))[:-1]
+                    contact_force = R@contact_force
+                    contact_torque = R@contact_torque
+                    contact_normal = R@contact_normal
+
+                if not self.im_resize: # if im_resize is None
+                    contact_pxls.append(contact_pos_prj)
+                    contact_prob_map[contact_pos_prj[1], contact_pos_prj[0]] = 1.0
+                    contact_force_map[:, contact_pos_prj[1], contact_pos_prj[0]] = contact_force
+                    contact_normal_map[:, contact_pos_prj[1], contact_pos_prj[0]] = contact_normal
+                else:
+                    ## THIS ONLY WORKS BECAUSE THE RESIZE IS BY THE SAME FACTOR ON BOTH H AND W! AND ALSO THE RESIZE IS MADE TO BE A NICE INT FACTOR (4 in this case...)
+                    ## TODO fix this resize reprojection by scaling the projection matrix...
+                    contact_pos_prj_resized = ((self.im_resize[0]/self.im_shape[0])*contact_pos_prj).astype(int)
+                    contact_pxls.append(contact_pos_prj_resized)
+                    contact_prob_map[contact_pos_prj_resized[1], contact_pos_prj_resized[0]] = 1.0
+
+                    contact_force_map[:, contact_pos_prj_resized[1], contact_pos_prj_resized[0]] = contact_force
+                    contact_normal_map[:, contact_pos_prj_resized[1], contact_pos_prj_resized[0]] = contact_normal
+        
+            # now pad each array to fit into max num contacts
+
+            # 2D np array of num contact x feature dim
+            # for some really odd reason these arrays were being converted to type object... had to explicitly convert them to float dtype...
+            num_pad_contacts = self.max_num_contact - contact_dict['num_contacts']
+            assert num_pad_contacts >= 0, 'number of contacts is bigger than max padding!!!'
+
+            padded_contact_positions = np.pad(contact_dict['positions'], ((0, num_pad_contacts), (0,0)), mode='constant', constant_values=(np.nan))
+            padded_contact_wrenches = np.pad(contact_dict['wrenches'], ((0, num_pad_contacts), (0,0)), mode='constant', constant_values=(np.nan))
+            padded_contact_normals = np.pad(contact_dict['normals'], ((0, num_pad_contacts), (0,0)), mode='constant', constant_values=(np.nan))
+            # padded_contact_pxls = np.pad(np.array(contact_pxls, dtype=int), ((0, num_pad_contacts), (0,0)), mode='constant', constant_values=(np.nan))
+            ## need to convert to float bc np.nan is a float and need to pad with it 
+            padded_contact_pxls_flt = np.pad(np.array(contact_pxls, dtype=float), ((0, num_pad_contacts), (0,0)), mode='constant', constant_values=(np.nan))
+
             
-            # no longer accepts a list of image times
-            contact_dict = self.get_contact_data(contact_time_label, self.contact_dt, self.contact_filtered_df)
-            
-            # output the contact location prob map
-            # output the contact forces map
-
-            if not self.im_resize:
-                contact_prob_map = np.zeros(self.im_shape)
-                contact_force_map = np.zeros((3,) + self.im_shape) #3 x H x W
-                contact_normal_map = np.zeros((3,) + self.im_shape)
-            else: 
-                contact_prob_map = np.zeros(self.im_resize)
-                contact_force_map = np.zeros((3,) + self.im_resize) #fx,fy,fz
-                contact_normal_map = np.zeros((3,) + self.im_resize) #fx,fy,fz
-            
-            contact_pxls = []
-
-            if contact_dict['num_contacts'] != 0:
-                for idx in range(contact_dict['num_contacts']): 
-                    contact_pos = contact_dict['positions'][idx]
-                    contact_force = contact_dict['wrenches'][idx][:3]
-                    contact_torque = contact_dict['wrenches'][idx][3:]
-                    contact_normal = contact_dict['normals'][idx]
-
-                    contact_pos_prj = self.point_proj(self.K_cam, depth_tf_world, contact_pos)
-
-                    if self.in_cam_frame:
-                        R = depth_tf_world[:3, :3]
-                        contact_pos = (depth_tf_world @ np.concatenate((contact_pos, np.array([1]))))[:-1]
-                        contact_force = R@contact_force
-                        contact_torque = R@contact_torque
-                        contact_normal = R@contact_normal
-
-                    if not self.im_resize: # if im_resize is None
-                        contact_pxls.append(contact_pos_prj)
-                        contact_prob_map[contact_pos_prj[1], contact_pos_prj[0]] = 1.0
-                        contact_force_map[:, contact_pos_prj[1], contact_pos_prj[0]] = contact_force
-                        contact_normal_map[:, contact_pos_prj[1], contact_pos_prj[0]] = contact_normal
-                    else:
-                        ## THIS ONLY WORKS BECAUSE THE RESIZE IS BY THE SAME FACTOR ON BOTH H AND W! AND ALSO THE RESIZE IS MADE TO BE A NICE INT FACTOR (4 in this case...)
-                        ## TODO fix this resize reprojection by scaling the projection matrix...
-                        contact_pos_prj_resized = ((self.im_resize[0]/self.im_shape[0])*contact_pos_prj).astype(int)
-                        contact_pxls.append(contact_pos_prj_resized)
-                        contact_prob_map[contact_pos_prj_resized[1], contact_pos_prj_resized[0]] = 1.0
-
-                        contact_force_map[:, contact_pos_prj_resized[1], contact_pos_prj_resized[0]] = contact_force
-                        contact_normal_map[:, contact_pos_prj_resized[1], contact_pos_prj_resized[0]] = contact_normal
-            
-                # now pad each array to fit into max num contacts
-
-                # 2D np array of num contact x feature dim
-                # for some really odd reason these arrays were being converted to type object... had to explicitly convert them to float dtype...
-                num_pad_contacts = self.max_num_contact - contact_dict['num_contacts']
-                assert num_pad_contacts >= 0, 'number of contacts is bigger than max padding!!!'
-
-                padded_contact_positions = np.pad(contact_dict['positions'], ((0, num_pad_contacts), (0,0)), mode='constant', constant_values=(np.nan))
-                padded_contact_wrenches = np.pad(contact_dict['wrenches'], ((0, num_pad_contacts), (0,0)), mode='constant', constant_values=(np.nan))
-                padded_contact_normals = np.pad(contact_dict['normals'], ((0, num_pad_contacts), (0,0)), mode='constant', constant_values=(np.nan))
-                # padded_contact_pxls = np.pad(np.array(contact_pxls, dtype=int), ((0, num_pad_contacts), (0,0)), mode='constant', constant_values=(np.nan))
-                ## need to convert to float bc np.nan is a float and need to pad with it 
-                padded_contact_pxls_flt = np.pad(np.array(contact_pxls, dtype=float), ((0, num_pad_contacts), (0,0)), mode='constant', constant_values=(np.nan))
-
-               
-            else:
-                padded_contact_positions = np.full((self.max_num_contact, 3), np.nan)
-                padded_contact_wrenches = np.full((self.max_num_contact, 6), np.nan)
-                padded_contact_normals = np.full((self.max_num_contact, 3), np.nan)
-                padded_contact_pxls_flt = np.full((self.max_num_contact, 2), np.nan)
-
-            if self.blur_contact_prob_dict['enable']:
-                contact_prob_map_blurred = cv2.GaussianBlur(contact_prob_map, (self.blur_contact_prob_dict['kernel_size'], self.blur_contact_prob_dict['kernel_size']), self.blur_contact_prob_dict['sigma'])
-
-            if self.clump_contact:
-                clump_slice = self.get_contact_clump_slice(contact_dict['time'], self.contact_filtered_df)
-                clump_df = self.contact_filtered_df.iloc[clump_slice].drop(contact_dict['time']) #drop the original contact
-                if len(clump_df) > 0:
-                    for index, clump_row in clump_df.iterrows(): # go through each row in the clump
-                        clump_dict = self.get_contact_data_from_row(clump_row)
-                        for idx in range(clump_dict['num_contacts']): 
-                            contact_pos = clump_dict['positions'][idx]
-                            contact_force = clump_dict['wrenches'][idx][:3]
-                            contact_torque = clump_dict['wrenches'][idx][3:]
-                            contact_normal = clump_dict['normals'][idx]
-
-                            contact_pos_prj = self.point_proj(self.K_cam, depth_tf_world, contact_pos)
-
-                            if self.in_cam_frame:
-                                R = depth_tf_world[:3, :3]
-                                contact_pos = (depth_tf_world @ np.concatenate((contact_pos, np.array([1]))))[:-1]
-                                contact_force = R@contact_force
-                                contact_torque = R@contact_torque
-                                contact_normal = R@contact_normal
-
-                            if not self.im_resize: # if im_resize is None
-                                contact_pxls.append(contact_pos_prj)
-                                contact_prob_map[contact_pos_prj[1], contact_pos_prj[0]] = 1.0
-                                
-                                ## need maxing here
-                                old_contact_force = contact_force_map[:, contact_pos_prj[1], contact_pos_prj[0]]
-                                contact_force_map[:, contact_pos_prj[1], contact_pos_prj[0]] = self.lambda_max(np.vstack((contact_force, old_contact_force)), axis=0, key=np.abs, keepdims=False)
-                                
-                                old_contact_normal = contact_normal_map[:, contact_pos_prj[1], contact_pos_prj[0]]
-                                contact_normal_map[:, contact_pos_prj[1], contact_pos_prj[0]] = self.lambda_max(np.vstack((contact_normal, old_contact_normal)), axis=0, key=np.abs, keepdims=False)
-                            else:
-                                contact_pos_prj_resized = ((self.im_resize[0]/self.im_shape[0])*contact_pos_prj).astype(int)
-                                contact_pxls.append(contact_pos_prj_resized)
-                                contact_prob_map[contact_pos_prj_resized[1], contact_pos_prj_resized[0]] = 1.0
-
-                                ## need maxing here
-                                old_contact_force = contact_force_map[:, contact_pos_prj_resized[1], contact_pos_prj_resized[0]]
-                                contact_force_map[:, contact_pos_prj_resized[1], contact_pos_prj_resized[0]] = self.lambda_max(np.vstack((contact_force, old_contact_force)), axis=0, key=np.abs, keepdims=False)
-                                old_contact_normal = contact_normal_map[:, contact_pos_prj_resized[1], contact_pos_prj_resized[0]]
-                                contact_normal_map[:, contact_pos_prj_resized[1], contact_pos_prj_resized[0]] = self.lambda_max(np.vstack((contact_normal, old_contact_normal)), axis=0, key=np.abs, keepdims=False)
-
-        if not self.is_real_dataset:       
-            return_dict = {
-            'poses_np': nrst_poses_np, # B x T x 7
-            'poses_pxls_np': pose_pxls, # B x T x 2
-            'wrenches_np': nrst_wrench_np, # B x T x 6
-            # 'images_tensor': self.im_to_tensor(np.moveaxis(images_normalized, 0, -1)), # converts H x W x T to tensor of T x H x W (im using Color channel as time...)
-            'images_tensor': images_normalized, # need to convert to dim T x H x W (im using Color channel as time...)
-            'color_paths': color_im_paths, # T dim list of B dim tuples
-            'im_times': im_times, # B x T
-            'cam_tf_world': depth_tf_world, 
-            'prob_map_np': contact_prob_map, # B x H x W
-            'force_map_np': contact_force_map,
-            'normal_map_np': contact_normal_map,
-            'contact_positions': padded_contact_positions, # B x max_num_contact x 3
-            'contact_wrenches': padded_contact_wrenches, # B x max_num_contact x 6
-            'contact_normals': padded_contact_normals, # B x max_num_contact x 3
-            'num_contacts': contact_dict['num_contacts'], # B
-            'contact_pxls_flt': padded_contact_pxls_flt, # need to apply astype(int) after loading
-            'contact_time': contact_dict['time'], # B
-            'contact_time_diff': contact_dict['time_diff'],
-            # 'bag_path': self.bag_path,
-            'len_samples': self._len,
-            'idx_accessed': idx
-            }
-            if self.blur_contact_prob_dict['enable']:
-                return_dict['prob_map_blurred_np'] = contact_prob_map_blurred
         else:
-            return_dict = {
-            'poses_np': nrst_poses_np,
-            'poses_pxls_np': pose_pxls,
-            'wrenches_np': nrst_wrench_np,
-            # 'images_tensor': self.im_to_tensor(np.moveaxis(images_normalized, 0, -1)), # converts H x W x T to tensor of T x H x W (im using Color channel as time...)
-            'images_tensor': images_normalized, # converts H x W x T to tensor of T x H x W (im using Color channel as time...)
-            'color_paths': color_im_paths,
-            'im_times': im_times,
-            'len_samples': self._len,
-            'idx_accessed': idx
-            }
+            padded_contact_positions = np.full((self.max_num_contact, 3), np.nan)
+            padded_contact_wrenches = np.full((self.max_num_contact, 6), np.nan)
+            padded_contact_normals = np.full((self.max_num_contact, 3), np.nan)
+            padded_contact_pxls_flt = np.full((self.max_num_contact, 2), np.nan)
+
+        if self.blur_contact_prob_dict['enable']:
+            contact_prob_map_blurred = cv2.GaussianBlur(contact_prob_map, (self.blur_contact_prob_dict['kernel_size'], self.blur_contact_prob_dict['kernel_size']), self.blur_contact_prob_dict['sigma'])
+
+
+        return_dict = {
+        'poses_np': nrst_poses_np, # B x T x 7
+        'poses_pxls_np': pose_pxls, # B x T x 2
+        'wrenches_np': nrst_wrench_np, # B x T x 6
+        'images_tensor': images_normalized, # need to convert to dim T x H x W (im using Color channel as time...)
+        'color_paths': color_im_paths, # T dim list of B dim tuples
+        'im_times': im_times, # B x T
+        'cam_tf_world': depth_tf_world, 
+        'prob_map_np': contact_prob_map, # B x H x W
+        'force_map_np': contact_force_map,
+        'normal_map_np': contact_normal_map,
+        'contact_positions': padded_contact_positions, # B x max_num_contact x 3
+        'contact_wrenches': padded_contact_wrenches, # B x max_num_contact x 6
+        'contact_normals': padded_contact_normals, # B x max_num_contact x 3
+        'num_contacts': contact_dict['num_contacts'], # B
+        'contact_pxls_flt': padded_contact_pxls_flt, # need to apply astype(int) after loading
+        'contact_time': contact_dict['time'], # B
+        'contact_time_diff': contact_dict['time_diff'],
+        'len_samples': self._len,
+        'idx_accessed': idx
+        }
+        if self.blur_contact_prob_dict['enable']:
+            return_dict['prob_map_blurred_np'] = contact_prob_map_blurred
 
         # return poses_wrenches_actions_tensor, self.target, normalized_times_np,  self.total_T
         return return_dict
@@ -591,7 +443,6 @@ class ContactDataset(Dataset):
         return EE_T_CoM, obj_mass
 
     def get_EEO_grav_wrench(self, O_T_EE, EE_T_CoM, obj_mass):
-
         # EEO is the K/EE frame but rotated to align with the O frame
         CoM_pos_EE = -EE_T_CoM[:3, :3].T @ EE_T_CoM[:3, -1] 
 
@@ -694,10 +545,7 @@ class ContactDataset(Dataset):
         return contact_dict
 
     def get_poses_history(self, times_list, proprio_history_dict, in_cam_frame=False, return_pxls=False):
-        if self.dyn_cam:
-            depth_tf_world = self.get_inv_cam_extrin(times_list, depth=True)
-        else:
-            depth_tf_world = self.depth_tf_world
+        depth_tf_world = self.depth_tf_world
 
         num_samples = int(proprio_history_dict['time_window'] * proprio_history_dict['sample_freq'])
         proprio_hist_times = np.linspace(min(times_list) - self.proprio_history_dict['time_window'], min(times_list), num_samples, endpoint=True).tolist()
@@ -728,10 +576,7 @@ class ContactDataset(Dataset):
             return nrst_poses_np
 
     def get_wrenches_history(self, times_list, proprio_history_dict, in_cam_frame=False, calib_grav=False):
-        if self.dyn_cam:
-            depth_tf_world = self.get_inv_cam_extrin(times_list, depth=True)
-        else:
-            depth_tf_world = self.depth_tf_world
+        depth_tf_world = self.depth_tf_world
 
         num_samples = int(proprio_history_dict['time_window'] * proprio_history_dict['sample_freq'])
         proprio_hist_times = np.linspace(min(times_list) - proprio_history_dict['time_window'], min(times_list), num_samples, endpoint=True).tolist()
@@ -846,31 +691,12 @@ class ContactDataset(Dataset):
         contact_dict['num_contacts'] = total_num_contacts
         return contact_dict
 
-    def get_contact_clump_slice(self, contact_time, contact_df):
-        contact_left_time = contact_time - self.contact_clump_dt
-        contact_right_time = contact_time + self.contact_clump_dt
-        
-        leftmost_idx = contact_df.index.searchsorted(contact_left_time, side='left')
-        rightmost_idx = contact_df.index.searchsorted(contact_right_time, side='left')
-        if contact_df.index[rightmost_idx] > contact_right_time:
-            rightmost_idx-=1
-        return slice(leftmost_idx, rightmost_idx+1)
-
     def point_proj(self, K, C_tf_W, pos):
         contact_pos_in_depth = (C_tf_W @ np.append(pos, 1))[:-1]
         # print(contact_pos_in_depth)
         project_coords = K @ (contact_pos_in_depth)
         return (project_coords[:2]/project_coords[-1]).astype(int)  
 
-    # def point_proj(self, pos, in_cam_frame=False): #K, C_tf_W,
-    #     # print(contact_pos_in_depth)
-    #     if in_cam_frame:
-    #         contact_pos = pos
-    #     else:
-    #         contact_pos = (self.depth_tf_world @ np.append(pos, 1))[:-1]
-    #     project_coords = self.K_cam @ (contact_pos)
-    #     return (project_coords[:2]/project_coords[-1]).astype(int)  
-    
     #### VISUALIZATION UTILS
     # pink color by default
     def viz_contact_pos(self, image_np, contact_pxls_flt, num_contacts, radius=1, color=(255, 133, 233)): # expects contact positions in world frame
@@ -895,6 +721,10 @@ class ContactDataset(Dataset):
         else:
             return cv2.cvtColor(image_np_color, cv2.COLOR_BGR2RGB)
 
+    def color_path_to_im(self, color_path):
+        color_im = cv2.imread(color_path)
+        color_im_resize = cv2.resize(color_im, (self.im_resize[1], self.im_resize[0]), interpolation=cv2.INTER_CUBIC)
+        return np.array(color_im_resize)
     # def get_FT_history(self, idx, window_size):
     #     im_time = self.im_times[idx]
 
