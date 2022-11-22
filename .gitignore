@@ -2,6 +2,9 @@
 datasets/*
 !datasets/.gitkeep
 
+# PyTorch Lightning logs
+**/lightning_logs
+
 # PyCharm
 .idea
 
