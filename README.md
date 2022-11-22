@@ -22,6 +22,21 @@ The `ContactDataset` class takes as init arguments the dataset path, the desired
 
 See `contact_dset_test.ipynb` file for example of loading samples from a dataloader which includes comments to explain use. 
 
+### About TGS Salt dataset
+You can download the dataset from Kaggle (https://www.kaggle.com/competitions/tgs-salt-identification-challenge/data).
+Under the `TGS_Salt` folder, you only have to download and unzip the `train` folder
+and download the `depths.csv` file.
+In the end, there should be `TGS_Salt/train` and `TGS_Salt/depths.csv`.
+
+Afterwards, you can call ``from dataloaders.tgs_salt import SaltDataset``
+and wrap a DataLoader around it.
+Each batch will be a `(x, d, y)` tuple, where `x` is a `[N, 1, H, W]` image,
+`d` is a `[N, 1]` scalar, and `y` is a `[N, 1, H, W]` binary mask.
+
+See `scripts/run_tgs.py`, where I created a trivial 2-layer CNN,
+along with a general PyTorch Lightning training routine
+for any `(x, d) -> y` network architecture.
+
 ## About dataloaders
 API to interact with datasets should be put under ``dataloaders``.
 They will be tracked by git and shared across computers.
