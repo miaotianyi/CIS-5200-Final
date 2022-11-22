@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, random_split
 import pytorch_lightning as pl
 
 from models.segmentor import BaseSegmentor
-from dataloaders.tgs_salt import SaltDataset
+from data.tgs_salt import SaltDataset
 
 
 class TrivialNet(nn.Module):
