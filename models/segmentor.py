@@ -4,7 +4,7 @@ from torch.nn import functional as F
 from torchvision.ops import sigmoid_focal_loss
 import pytorch_lightning as pl
 
-from models.metrics import confusion_matrix_loss
+from .metrics import confusion_matrix_loss
 
 
 class BaseSegmentor(pl.LightningModule):
