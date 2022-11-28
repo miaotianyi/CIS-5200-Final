@@ -39,6 +39,8 @@ class BaseSegmentor(pl.LightningModule):
         self.net = net
         self.learning_rate = learning_rate
 
+        self.save_hyperparameters(ignore=['net']) # save hyperparms for wandblogger
+
     def forward(self, inputs):
         # this outputs probabilities
         # (not logits, which are only used in training)

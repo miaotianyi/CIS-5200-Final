@@ -1,6 +1,11 @@
 # datasets
 datasets/*
 !datasets/.gitkeep
+.envrc
+
+# wandb logs
+**/wandb
+**/cis520 
 
 # PyTorch Lightning logs
 **/lightning_logs

@@ -3,6 +3,7 @@ from torch import nn
 from torch.utils.data import DataLoader, random_split
 
 import pytorch_lightning as pl
+from pytorch_lightning.loggers import WandbLogger
 
 from models.segmentor import BaseSegmentor
 from data.tgs_salt import SaltDataset
@@ -32,6 +33,7 @@ class TrivialNet(nn.Module):
 
 
 def main():
+    wandb_logger = WandbLogger(project='cis520')
     # get dataset
     dataset = SaltDataset()
     # set random seed
@@ -42,7 +44,8 @@ def main():
     val_loader = DataLoader(val_set, batch_size=32, shuffle=False)
     trainer = pl.Trainer(
         max_epochs=6,
-        devices=1, accelerator="gpu"
+        devices=1, accelerator="gpu",
+        logger=wandb_logger
     )
     trainer.fit(model=BaseSegmentor(TrivialNet()),
                 train_dataloaders=train_loader,
