@@ -6,9 +6,10 @@ import pytorch_lightning as pl
 
 from .metrics import confusion_matrix_loss
 
-
+from models.trivial import TrivialNet
+from models.unet import UNet
 class BaseSegmentor(pl.LightningModule):
-    def __init__(self, net, learning_rate=1e-3):
+    def __init__(self, model, learning_rate, **kwargs):
         """
         Base segmentor for image segmentation tasks.
 
@@ -36,28 +37,40 @@ class BaseSegmentor(pl.LightningModule):
             Learning rate for Adam optimizer.
         """
         super().__init__()
-        self.net = net
+        if model == 'trivial':
+            self.model = TrivialNet()
+        elif model == 'unet':
+            self.model = UNet()
+        else:
+            raise ValueError('Unknown model: {}'.format(model))
+
         self.learning_rate = learning_rate
+        self.save_hyperparameters() # save hyperparms for wandblogger
 
-        self.save_hyperparameters(ignore=['net']) # save hyperparms for wandblogger
-
+    @staticmethod
+    def add_model_specific_args(parent_parser):
+        parser = parent_parser.add_argument_group('BaseSegmentor')
+        parser.add_argument("--model", type=str, default='trivial')
+        parser.add_argument("--learning_rate", type=float, default=1e-3)
+        return parent_parser
+    
     def forward(self, inputs):
         # this outputs probabilities
         # (not logits, which are only used in training)
-        x = self.net(inputs)
+        x = self.model(inputs)
         x = torch.sigmoid(x)
         return x
 
     def training_step(self, batch, batch_idx):
         inputs, y = batch[:-1], batch[-1]
-        y_pred = self.net(inputs)
+        y_pred = self.model(inputs)
         loss = F.binary_cross_entropy_with_logits(input=y_pred, target=y)
         self.log("train_loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
         inputs, y = batch[:-1], batch[-1]
-        y_pred_logit = self.net(inputs)
+        y_pred_logit = self.model(inputs)
         self._log_validation_stats(y_true=y, y_pred_logit=y_pred_logit)
 
     def _log_validation_stats(self, y_true, y_pred_logit):
@@ -84,3 +97,4 @@ class BaseSegmentor(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
         return optimizer
+

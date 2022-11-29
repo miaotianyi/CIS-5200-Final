@@ -5,52 +5,50 @@ from torch.utils.data import DataLoader, random_split
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 
-from models.segmentor import BaseSegmentor
+
 from data.tgs_salt import SaltDataset
 
+from argparse import ArgumentParser
 
-class TrivialNet(nn.Module):
-    def __init__(self):
-        """
-        A trivial segmentation CNN consisting of 2 layers.
-
-        This is mostly used to see that there's no bug in training procedure
-
-        Input is [N, 1, H, W] pixel in range [0.0, 1.0]
-        Output is [N, 1, H, W] logits (unnormalized).
-        """
-        super().__init__()
-        self.conv1 = nn.Conv2d(in_channels=1, out_channels=8, kernel_size=3, padding=1)
-        self.relu1 = nn.ReLU()
-        self.conv2 = nn.Conv2d(in_channels=8, out_channels=1, kernel_size=3, padding=1)
-
-    def forward(self, inputs):
-        x, d = inputs
-        x = self.conv1(x)
-        x = self.relu1(x)
-        x = self.conv2(x)
-        return x
-
+from models.segmentor import BaseSegmentor
 
 def main():
-    wandb_logger = WandbLogger(project='cis520')
+    parser = ArgumentParser()
+
+    # wandb logger args
+    parser.add_argument("--project", type=str, default="cis520")
+    parser.add_argument("--entity", type=str, default="mlfp")
+    parser.add_argument("--group", type=str, default="salt")
+    parser.add_argument("--name", type=str, default="test")
+
+    # trainer args
+    parser = pl.Trainer.add_argparse_args(parser)
+
+    parser = BaseSegmentor.add_model_specific_args(parser)
+
+    # data args
+    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--dataset_split", type=float, default=0.7)
+    parser.add_argument("--seed", type=float, default=42)
+
+    args = parser.parse_args()
+    dict_args = vars(args)
+    wandb_logger = WandbLogger(project = args.project, entity = args.entity, group = args.group, name = args.name)
+    
     # get dataset
     dataset = SaltDataset()
     # set random seed
-    seed = torch.Generator().manual_seed(42)
-    train_set, val_set = random_split(dataset, [0.7, 0.3], generator=seed)
+    seed = torch.Generator().manual_seed(args.seed)
+    train_set, val_set = random_split(dataset, [args.dataset_split, 1 - args.dataset_split], generator=seed)
 
-    train_loader = DataLoader(train_set, batch_size=32, shuffle=True)
-    val_loader = DataLoader(val_set, batch_size=32, shuffle=False)
-    trainer = pl.Trainer(
-        max_epochs=6,
-        devices=1, accelerator="gpu",
-        logger=wandb_logger
-    )
-    trainer.fit(model=BaseSegmentor(TrivialNet()),
+    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
+    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False)
+    trainer = pl.Trainer.from_argparse_args(args, logger=wandb_logger)
+    
+    model = BaseSegmentor(**dict_args)
+    trainer.fit(model=model,
                 train_dataloaders=train_loader,
                 val_dataloaders=val_loader)
-
 
 if __name__ == '__main__':
     # use this command to see tensorboard:
