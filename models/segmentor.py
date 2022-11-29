@@ -8,6 +8,7 @@ from .metrics import confusion_matrix_loss
 
 from models.trivial import TrivialNet
 from models.unet import UNet
+from models.ResNet import ResNet, BasicBlock, Bottleneck
 class BaseSegmentor(pl.LightningModule):
     def __init__(self, model, learning_rate, **kwargs):
         """
@@ -41,6 +42,14 @@ class BaseSegmentor(pl.LightningModule):
             self.model = TrivialNet()
         elif model == 'unet':
             self.model = UNet()
+        elif model == 'resnet':
+            self.model = ResNet(1, BasicBlock, [1, 1, 1, 1], num_classes=1)
+        elif model == 'resnet_begin':
+            self.model = ResNet(2, BasicBlock, [1, 1, 1, 1], num_classes=1, scalar=True, scalar_layer='begin')
+        elif model == 'resnet_end':
+            self.model = ResNet(1, BasicBlock, [1, 1, 1, 1], num_classes=1, scalar=True, scalar_layer='end')
+        elif model == 'resnet_34':
+            self.model = ResNet(1, BasicBlock, [3, 4, 6, 3], num_classes=1)
         else:
             raise ValueError('Unknown model: {}'.format(model))
 

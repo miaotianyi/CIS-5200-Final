@@ -15,7 +15,7 @@ class SaltDataset(Dataset):
     "train/masks" contains 101 x 101 binary segmentation labels
     "depths.csv" contains the
     """
-    def __init__(self, dataset_dir="../datasets/TGS_Salt"):
+    def __init__(self, normalize=True, dataset_dir="../datasets/TGS_Salt"):
         self.images_dir = os.path.join(dataset_dir, "train/images")
         self.masks_dir = os.path.join(dataset_dir, "train/masks")
         self.image_names = os.listdir(self.images_dir)  # the same for images and masks
@@ -25,6 +25,9 @@ class SaltDataset(Dataset):
             on="id",
             how="right"
         )
+        if normalize:
+            self.depths['z'] = self.depths['z'] / self.depths['z'].max()    # normalize depth
+            self.depths['z'] = self.depths['z'].astype('float32')
 
     def __len__(self):
         return len(self.image_names)
