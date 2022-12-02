@@ -25,6 +25,9 @@ class SaltDataset(Dataset):
             on="id",
             how="right"
         )
+        self.min_depth = self.depths["z"].min()
+        self.max_depth = self.depths["z"].max()
+
         if normalize:
             self.depths['z'] = self.depths['z'] / self.depths['z'].max()    # normalize depth
             self.depths['z'] = self.depths['z'].astype('float32')

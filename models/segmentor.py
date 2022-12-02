@@ -10,7 +10,7 @@ from models.trivial import TrivialNet
 from models.unet import UNet
 from models.ResNet import ResNet, BasicBlock, Bottleneck
 class BaseSegmentor(pl.LightningModule):
-    def __init__(self, model, learning_rate, **kwargs):
+    def __init__(self, model, learning_rate, meta_dim, **kwargs):
         """
         Base segmentor for image segmentation tasks.
 
@@ -42,6 +42,12 @@ class BaseSegmentor(pl.LightningModule):
             self.model = TrivialNet()
         elif model == 'unet':
             self.model = UNet()
+        elif model == 'unet_begin':
+            self.model = UNet(meta_layer='begin', meta_dim=meta_dim)
+        elif model == 'unet_bneck':
+            self.model = UNet(meta_layer='bneck', meta_dim=meta_dim)
+        elif model == 'unet_end':
+            self.model = UNet(meta_layer='end', meta_dim=meta_dim)
         elif model == 'resnet':
             self.model = ResNet(1, BasicBlock, [1, 1, 1, 1], num_classes=1)
         elif model == 'resnet_begin':
@@ -61,6 +67,7 @@ class BaseSegmentor(pl.LightningModule):
         parser = parent_parser.add_argument_group('BaseSegmentor')
         parser.add_argument("--model", type=str, default='trivial')
         parser.add_argument("--learning_rate", type=float, default=1e-3)
+        parser.add_argument("--normalize_depth", type=bool, default=False)
         return parent_parser
     
     def forward(self, inputs):
@@ -75,12 +82,34 @@ class BaseSegmentor(pl.LightningModule):
         y_pred = self.model(inputs)
         loss = F.binary_cross_entropy_with_logits(input=y_pred, target=y)
         self.log("train_loss", loss)
+        self._log_training_stats(y_true=y, y_pred_logit=y_pred)
         return loss
 
     def validation_step(self, batch, batch_idx):
         inputs, y = batch[:-1], batch[-1]
         y_pred_logit = self.model(inputs)
         self._log_validation_stats(y_true=y, y_pred_logit=y_pred_logit)
+    
+    def _log_training_stats(self, y_true, y_pred_logit):
+        y_pred_prob = torch.sigmoid(y_pred_logit)
+        y_pred_label = (y_pred_prob > 0.5).float()
+        self.log("train_bce", F.binary_cross_entropy_with_logits(input=y_pred_logit, target=y_true), on_step=False , on_epoch=True)
+        self.log("train_focal", sigmoid_focal_loss(inputs=y_pred_logit, targets=y_true, reduction="mean"), on_step=False, on_epoch=True)
+        self.log("train_accuracy", (y_pred_label == y_true).float().mean(), on_step=False, on_epoch=True)
+        self.log("train_sample_soft_f1_score",
+                 1 - confusion_matrix_loss(y_true=y_true, y_pred=y_pred_prob, metric="f_beta", average="samples"), on_step=False, on_epoch=True)
+        self.log("train_sample_soft_dice_loss",
+                 confusion_matrix_loss(y_true=y_true, y_pred=y_pred_prob, metric="dice", average="samples"), on_step=False, on_epoch=True)
+        self.log("train_sample_soft_precision",
+                 1 - confusion_matrix_loss(y_true=y_true, y_pred=y_pred_prob, metric="precision", average="samples"), on_step=False, on_epoch=True)
+        self.log("train_sample_soft_recall",
+                 1 - confusion_matrix_loss(y_true=y_true, y_pred=y_pred_prob, metric="recall", average="samples"), on_step=False, on_epoch=True)
+        self.log("train_sample_hard_f1_score",
+                 1 - confusion_matrix_loss(y_true=y_true, y_pred=y_pred_label, metric="f_beta", average="samples"), on_step=False, on_epoch=True)
+        self.log("train_sample_hard_precision",
+                 1 - confusion_matrix_loss(y_true=y_true, y_pred=y_pred_label, metric="precision", average="samples"), on_step=False, on_epoch=True)
+        self.log("train_sample_hard_recall",
+                 1 - confusion_matrix_loss(y_true=y_true, y_pred=y_pred_label, metric="recall", average="samples"), on_step=False, on_epoch=True)
 
     def _log_validation_stats(self, y_true, y_pred_logit):
         y_pred_prob = torch.sigmoid(y_pred_logit)

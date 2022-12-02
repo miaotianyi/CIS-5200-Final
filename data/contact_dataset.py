@@ -20,7 +20,7 @@ import math
 import pickle
 class ContactDataset(Dataset):
     # if window_size = -1, produce the full episode !
-    def __init__(self, bag_path, window_size, obj_name, standardize_ft_pose=False, 
+    def __init__(self, bag_path, window_size=1, obj_name='EE_object', standardize_ft_pose=False, 
     calib_FT=False, im_time_offset=0.1, max_depth_clip=2.0, max_num_contact=20, 
     contact_persist_time=0.002, in_cam_frame=True, 
     im_resize=None, centered=False, proprio_history_dict=None, blur_contact_prob_dict=None):

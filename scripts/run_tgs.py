@@ -45,6 +45,7 @@ def main():
     val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False)
     trainer = pl.Trainer.from_argparse_args(args, logger=wandb_logger)
     
+    dict_args['meta_dim'] = 1 # for salt dataset we just have scalar depth metadata
     model = BaseSegmentor(**dict_args)
     trainer.fit(model=model,
                 train_dataloaders=train_loader,
