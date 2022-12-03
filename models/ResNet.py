@@ -141,14 +141,14 @@ class ResNet(nn.Module):
         width_per_group: int = 64,
         replace_stride_with_dilation: Optional[List[bool]] = None,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
-        scalar: bool = False,
-        scalar_layer: str = "begin",  # layer where metadata is fed into the model, begin/neck/end
+        meta_layer: Optional[str] = None, 
+        meta_dim: Optional[int] = None
     ) -> None:
         super().__init__()
 
-        # change: add scalar and scalar_layer indicator
-        self.scalar = scalar
-        self.scalar_layer = scalar_layer
+        # change: add meta_dim and meta_layer indicator
+        self.meta_layer = meta_layer    # layer where scalar input is fed
+        self.meta_dim = meta_dim        # dimension of scalar input
 
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
@@ -167,7 +167,10 @@ class ResNet(nn.Module):
             )
         self.groups = groups
         self.base_width = width_per_group
-        # change: stride to 1
+
+        # change: stride to 1, 
+        if self.meta_layer=="begin":
+            in_channels += self.meta_dim # add meta channel if concatenate scalar at beginning
         self.conv1 = nn.Conv2d(in_channels, self.inplanes, kernel_size=7, stride=1, padding=3, bias=False)
         self.bn1 = norm_layer(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
@@ -181,8 +184,8 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(block, 64, layers[3])#, stride=2, dilate=replace_stride_with_dilation[2])
         
         # change output_layer for concatenating scalar at the end
-        if self.scalar and self.scalar_layer=="end":
-            self.output_layer = nn.Conv2d(65, num_classes, kernel_size=3, padding=1)
+        if self.meta_layer=="end":
+            self.output_layer = nn.Conv2d(64 + self.meta_dim, num_classes, kernel_size=3, padding=1)
         else:
             self.output_layer = nn.Conv2d(64, num_classes, kernel_size=3, padding=1)
 
@@ -260,13 +263,17 @@ class ResNet(nn.Module):
         x = self.output_layer(x)
         return x
 
+    def fuse_inputs(self, x, d):
+        bneck_dim = (x.shape[-2], x.shape[-1])
+        tiled_d = d.reshape(-1, self.meta_dim, 1, 1).repeat(1, 1, bneck_dim[0], bneck_dim[1])
+        fused_x = torch.cat([x, tiled_d], dim=1) #concatenate along channel dimension
+        return fused_x
+
     # change: forward implementation merging metadata
     # TODO: seperate function from _forward_impl, could merge into one function in the future
     def _forward_impl_scalar(self, x: torch.Tensor, d: torch.Tensor) -> torch.Tensor:
-        if self.scalar_layer == "begin":
-            if len(d.shape) == 1:   # (batch_size)
-                d = torch.tile(d.reshape(-1, 1, 1, 1), (1, 1, x.shape[2], x.shape[3]))
-            x = torch.cat((x, d), dim=1)    # (batch_size, c + 1, w, h)
+        if self.meta_layer == "begin":
+            x = self.fuse_inputs(x, d)
 
         # See note [TorchScript super()]
         x = self.conv1(x)
@@ -280,17 +287,15 @@ class ResNet(nn.Module):
         x = self.layer3(x)
         x = self.layer4(x)
 
-        if self.scalar_layer == "end":
-            if len(d.shape) == 1:   # (batch_size)
-                d = torch.tile(d.reshape(-1, 1, 1, 1), (1, 1, x.shape[2], x.shape[3]))
-            x = torch.cat((x, d), dim=1)    # (batch_size, c + 1, w, h)
-
+        if self.meta_layer == "end":
+            x = self.fuse_inputs(x, d)
+            
         x = self.output_layer(x)
         return x
 
     def forward(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         x, d = inputs
-        if not self.scalar: # if doesn't feed scalar into the model
+        if self.meta_layer is None: # if doesn't feed scalar into the model
             return self._forward_impl(x)
-        elif self.scalar:
+        else:
             return self._forward_impl_scalar(x, d)

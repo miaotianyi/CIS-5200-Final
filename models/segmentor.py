@@ -9,8 +9,10 @@ from .metrics import confusion_matrix_loss
 from models.trivial import TrivialNet
 from models.unet import UNet
 from models.ResNet import ResNet, BasicBlock, Bottleneck
+from models.embedding import SinusoidalPositionEmbeddings
+
 class BaseSegmentor(pl.LightningModule):
-    def __init__(self, model, learning_rate, meta_dim, **kwargs):
+    def __init__(self, model, learning_rate, meta_dim, pos_embed, embed_dim, **kwargs):
         """
         Base segmentor for image segmentation tasks.
 
@@ -38,6 +40,11 @@ class BaseSegmentor(pl.LightningModule):
             Learning rate for Adam optimizer.
         """
         super().__init__()
+
+        if pos_embed:
+            self.pos_embed = SinusoidalPositionEmbeddings(embed_dim)
+            meta_dim = embed_dim
+
         if model == 'trivial':
             self.model = TrivialNet()
         elif model == 'unet':
@@ -50,12 +57,12 @@ class BaseSegmentor(pl.LightningModule):
             self.model = UNet(meta_layer='end', meta_dim=meta_dim)
         elif model == 'resnet':
             self.model = ResNet(1, BasicBlock, [1, 1, 1, 1], num_classes=1)
-        elif model == 'resnet_begin':
-            self.model = ResNet(2, BasicBlock, [1, 1, 1, 1], num_classes=1, scalar=True, scalar_layer='begin')
-        elif model == 'resnet_end':
-            self.model = ResNet(1, BasicBlock, [1, 1, 1, 1], num_classes=1, scalar=True, scalar_layer='end')
         elif model == 'resnet_34':
             self.model = ResNet(1, BasicBlock, [3, 4, 6, 3], num_classes=1)
+        elif model == 'resnet_begin':
+            self.model = ResNet(1, BasicBlock, [1, 1, 1, 1], num_classes=1, meta_layer='begin', meta_dim=meta_dim)
+        elif model == 'resnet_end':
+            self.model = ResNet(1, BasicBlock, [1, 1, 1, 1], num_classes=1, meta_layer='end', meta_dim=meta_dim)
         else:
             raise ValueError('Unknown model: {}'.format(model))
 
@@ -73,12 +80,24 @@ class BaseSegmentor(pl.LightningModule):
     def forward(self, inputs):
         # this outputs probabilities
         # (not logits, which are only used in training)
+
+        # position embedding
+        if self.pos_embed is not None:
+            x, d = inputs
+            inputs = (x, self.pos_embed(d))
+
         x = self.model(inputs)
         x = torch.sigmoid(x)
         return x
 
     def training_step(self, batch, batch_idx):
         inputs, y = batch[:-1], batch[-1]
+
+        # position embedding
+        if self.pos_embed is not None:
+            x, d = inputs
+            inputs = (x, self.pos_embed(d))
+
         y_pred = self.model(inputs)
         loss = F.binary_cross_entropy_with_logits(input=y_pred, target=y)
         self.log("train_loss", loss)
@@ -87,6 +106,12 @@ class BaseSegmentor(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         inputs, y = batch[:-1], batch[-1]
+
+        # position embedding
+        if self.pos_embed is not None:
+            x, d = inputs
+            inputs = (x, self.pos_embed(d))
+
         y_pred_logit = self.model(inputs)
         self._log_validation_stats(y_true=y, y_pred_logit=y_pred_logit)
     
