@@ -41,6 +41,7 @@ class BaseSegmentor(pl.LightningModule):
         """
         super().__init__()
 
+        self.pos_embed = None
         if pos_embed:
             self.pos_embed = SinusoidalPositionEmbeddings(embed_dim)
             meta_dim = embed_dim
