@@ -2,6 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from typing import Any, Callable, List, Optional, Type, Union, Tuple
+from models.mlp import MLP
 
 
 def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:
@@ -149,6 +150,8 @@ class ResNet(nn.Module):
         # change: add meta_dim and meta_layer indicator
         self.meta_layer = meta_layer    # layer where scalar input is fed
         self.meta_dim = meta_dim        # dimension of scalar input
+        if self.meta_layer is not None:
+            self.meta_encoder = MLP(meta_dim, [meta_dim, meta_dim], meta_dim)
 
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
@@ -273,6 +276,7 @@ class ResNet(nn.Module):
     # TODO: seperate function from _forward_impl, could merge into one function in the future
     def _forward_impl_scalar(self, x: torch.Tensor, d: torch.Tensor) -> torch.Tensor:
         if self.meta_layer == "begin":
+            d = self.meta_encoder(d)
             x = self.fuse_inputs(x, d)
 
         # See note [TorchScript super()]
@@ -288,6 +292,7 @@ class ResNet(nn.Module):
         x = self.layer4(x)
 
         if self.meta_layer == "end":
+            d = self.meta_encoder(d)
             x = self.fuse_inputs(x, d)
             
         x = self.output_layer(x)
