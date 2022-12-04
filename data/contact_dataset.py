@@ -20,10 +20,10 @@ import math
 import pickle
 class ContactDataset(Dataset):
     # if window_size = -1, produce the full episode !
-    def __init__(self, bag_path, window_size=1, obj_name='EE_object', standardize_ft_pose=False, 
+    def __init__(self, bag_path='../datasets/contact_dset', window_size=1, obj_name='EE_object', standardize_ft_pose=False, 
     calib_FT=False, im_time_offset=0.1, max_depth_clip=2.0, max_num_contact=20, 
     contact_persist_time=0.002, in_cam_frame=True, 
-    im_resize=None, centered=False, proprio_history_dict=None, blur_contact_prob_dict=None):
+    im_resize=(180,320), centered=False, proprio_history_dict=None):
         self.proprio_history_dict = proprio_history_dict
         self.standardize_ft_pose = standardize_ft_pose
        
@@ -32,11 +32,14 @@ class ContactDataset(Dataset):
         self.im_time_offset = im_time_offset
         self.max_num_contact = max_num_contact
         self.contact_persist_time = contact_persist_time
+        self.blur_contact_prob_dict = {
+            'enable': True,
+            'kernel_size': 5, # in pixels
+            'sigma': 0 # if 0, sigma is calculated automatically from kernel size
+        }        
 
-        if blur_contact_prob_dict is None:
-            self.blur_contact_prob_dict = {'enable': False} 
-        else:
-            self.blur_contact_prob_dict = blur_contact_prob_dict 
+        
+        self.threshold = cv2.getGaussianKernel(self.blur_contact_prob_dict['kernel_size'], self.blur_contact_prob_dict['sigma']).max()/2
         ## for now hardcode the main topic and topics of interest...
         
         # bag_path = '~/datasets/rosbags/input.bag'
@@ -44,8 +47,8 @@ class ContactDataset(Dataset):
         if not os.path.exists(self.bag_path):
             raise AssertionError('bag path does not exist')
         
-        assert os.path.exists(os.path.join(self.bag_path.strip('.bag'), 'tot_bag_dict.pickle')), 'tot_bag_dict.pickle does not exist' 
-        with open(os.path.join(self.bag_path.strip('.bag'), 'tot_bag_dict.pickle'), 'rb') as handle:
+        assert os.path.exists(os.path.join(self.bag_path, 'tot_bag_dict.pickle')), 'tot_bag_dict.pickle does not exist' 
+        with open(os.path.join(self.bag_path, 'tot_bag_dict.pickle'), 'rb') as handle:
             print('loaded info dict from pickle file!!')
             self.info_dict =  pickle.load(handle)
 
@@ -68,15 +71,15 @@ class ContactDataset(Dataset):
         self.total_T = self.info_dict['duration']
 
         # if self.is_real_dataset:
-        if os.path.exists(os.path.join(self.bag_path.strip('.bag'), 'aligned_depth_to_color')):
+        if os.path.exists(os.path.join(self.bag_path, 'aligned_depth_to_color')):
             self.im_type = 'aligned_depth_to_color'
         # else: 
-        elif os.path.exists(os.path.join(bag_path.strip('.bag'), 'depth')):
+        elif os.path.exists(os.path.join(bag_path, 'depth')):
             self.im_type = 'depth'
         else:
             raise AssertionError('no depth directory!')
 
-        self.im_path = os.path.join(self.bag_path.strip('.bag'), self.im_type)
+        self.im_path = os.path.join(self.bag_path, self.im_type)
         assert os.path.exists(self.im_path), 'im_path does not exist!!'
         self.im_times = np.load(os.path.join(self.im_path, 'timestamps.npy'), allow_pickle=True) - self.im_time_offset
         self.im_path_list = natsort.natsorted(glob.glob(os.path.join(self.im_path, '*.png')))
@@ -94,7 +97,7 @@ class ContactDataset(Dataset):
         self.main_num_msgs = self.depth_num_msgs
 
         self.color_type = 'gray'
-        self.color_path = os.path.join(self.bag_path.strip('.bag'), self.color_type)
+        self.color_path = os.path.join(self.bag_path, self.color_type)
         assert os.path.exists(self.color_path), 'color_path does not exist!!'
         self.color_times = np.load(os.path.join(self.color_path, 'timestamps.npy'), allow_pickle=True) - self.im_time_offset
         self.color_path_list = natsort.natsorted(glob.glob(os.path.join(self.color_path, '*.png')))
@@ -155,7 +158,7 @@ class ContactDataset(Dataset):
         ## read the label
         self.contact_dt = 1./self.contact_freq
 
-        self.contact_df = pd.read_pickle(os.path.join(bag_path.strip('.bag'), 'contact_df.pkl'))
+        self.contact_df = pd.read_pickle(os.path.join(bag_path, 'contact_df.pkl'))
     
         ## need to filter out all rows where none of the contact state collision names have the object name
         ## this is in order for the no contact estimation heuristic to work 
@@ -167,10 +170,10 @@ class ContactDataset(Dataset):
         self.depth_times = np.load(os.path.join(self.im_path, 'timestamps.npy'), allow_pickle=True)
 
         ## proprio
-        self.proprio_df = pd.read_pickle(os.path.join(bag_path.strip('.bag'), 'proprio_df.pkl'))
+        self.proprio_df = pd.read_pickle(os.path.join(bag_path, 'proprio_df.pkl'))
 
         if self.calib_FT:
-            self.ep_info_df = pd.read_pickle(os.path.join(bag_path.strip('.bag'), 'ep_info_df.pkl'))
+            self.ep_info_df = pd.read_pickle(os.path.join(bag_path, 'ep_info_df.pkl'))
 
     def __len__(self):
         return self._len
@@ -355,11 +358,14 @@ class ContactDataset(Dataset):
         'len_samples': self._len,
         'idx_accessed': idx
         }
+
         if self.blur_contact_prob_dict['enable']:
             return_dict['prob_map_blurred_np'] = contact_prob_map_blurred
 
+        # concatenate the pose and wrench tensor 
+        d = np.concatenate((return_dict['poses_np'][0, :] , return_dict['wrenches_np'][0, :]))
         # return poses_wrenches_actions_tensor, self.target, normalized_times_np,  self.total_T
-        return return_dict
+        return return_dict['images_tensor'].astype(np.float32), d.astype(np.float32), return_dict['prob_map_blurred_np'][None, ...]
 
     def affine_tf_to_pose(self, tf): 
         ## returns 7d vector of trans, quat (x,y,z,w) format
@@ -518,22 +524,22 @@ class ContactDataset(Dataset):
 
                 contact_pos_idx = base_contact_name + '/contact_positions/' + str(contact_idx) 
                 contact_pos_cols = [col for col in row.keys() if contact_pos_idx in col]
-                contact_pos = row[contact_pos_cols].values.astype(np.float64)
+                contact_pos = row[contact_pos_cols].values.astype(np.float32)
                 contact_positions.append(contact_pos)
 
                 contact_nrml_idx = base_contact_name + '/contact_normals/' + str(contact_idx) 
                 contact_nrml_cols = [col for col in row.keys() if contact_nrml_idx in col]
-                contact_nrml = row[contact_nrml_cols].values.astype(np.float64)
+                contact_nrml = row[contact_nrml_cols].values.astype(np.float32)
                 contact_normals.append(contact_nrml)
 
                 contact_force_idx = base_contact_name + '/wrenches/' + str(contact_idx) + '/force/'
                 contact_force_cols = [col for col in row.keys() if contact_force_idx in col]
-                contact_force = row[contact_force_cols].values.astype(np.float64)
+                contact_force = row[contact_force_cols].values.astype(np.float32)
 
 
                 contact_torque_idx = base_contact_name + '/wrenches/' + str(contact_idx) + '/torque/'
                 contact_torque_cols = [col for col in row.keys() if contact_torque_idx in col]
-                contact_torque = row[contact_torque_cols].values.astype(np.float64)
+                contact_torque = row[contact_torque_cols].values.astype(np.float32)
 
                 contact_wrenches.append(np.concatenate((contact_force, contact_torque)))
         
@@ -665,22 +671,22 @@ class ContactDataset(Dataset):
 
                     contact_pos_idx = base_contact_name + '/contact_positions/' + str(contact_idx) 
                     contact_pos_cols = [col for col in row.keys() if contact_pos_idx in col]
-                    contact_pos = row[contact_pos_cols].values.astype(np.float64)
+                    contact_pos = row[contact_pos_cols].values.astype(np.float32)
                     contact_positions.append(contact_pos)
 
                     contact_nrml_idx = base_contact_name + '/contact_normals/' + str(contact_idx) 
                     contact_nrml_cols = [col for col in row.keys() if contact_nrml_idx in col]
-                    contact_nrml = row[contact_nrml_cols].values.astype(np.float64)
+                    contact_nrml = row[contact_nrml_cols].values.astype(np.float32)
                     contact_normals.append(contact_nrml)
 
                     contact_force_idx = base_contact_name + '/wrenches/' + str(contact_idx) + '/force/'
                     contact_force_cols = [col for col in row.keys() if contact_force_idx in col]
-                    contact_force = row[contact_force_cols].values.astype(np.float64)
+                    contact_force = row[contact_force_cols].values.astype(np.float32)
 
 
                     contact_torque_idx = base_contact_name + '/wrenches/' + str(contact_idx) + '/torque/'
                     contact_torque_cols = [col for col in row.keys() if contact_torque_idx in col]
-                    contact_torque = row[contact_torque_cols].values.astype(np.float64)
+                    contact_torque = row[contact_torque_cols].values.astype(np.float32)
 
                     contact_wrenches.append(np.concatenate((contact_force, contact_torque)))
             

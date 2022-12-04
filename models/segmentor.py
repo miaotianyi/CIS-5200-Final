@@ -12,7 +12,7 @@ from models.ResNet import ResNet, BasicBlock, Bottleneck
 from models.embedding import SinusoidalPositionEmbeddings
 
 class BaseSegmentor(pl.LightningModule):
-    def __init__(self, model, learning_rate, meta_dim, pos_embed, embed_dim, **kwargs):
+    def __init__(self, model, learning_rate, meta_dim, pos_embed, embed_dim, threshold=0.5, **kwargs):
         """
         Base segmentor for image segmentation tasks.
 
@@ -68,6 +68,7 @@ class BaseSegmentor(pl.LightningModule):
             raise ValueError('Unknown model: {}'.format(model))
 
         self.learning_rate = learning_rate
+        self.threshold = threshold
         self.save_hyperparameters() # save hyperparms for wandblogger
 
     @staticmethod
@@ -118,7 +119,11 @@ class BaseSegmentor(pl.LightningModule):
     
     def _log_training_stats(self, y_true, y_pred_logit):
         y_pred_prob = torch.sigmoid(y_pred_logit)
-        y_pred_label = (y_pred_prob > 0.5).float()
+        y_pred_label = (y_pred_prob > self.threshold).float()
+
+        # hack to convert smoothed labels to binary
+        y_true = (y_true > self.threshold).float()
+
         self.log("train_bce", F.binary_cross_entropy_with_logits(input=y_pred_logit, target=y_true), on_step=False , on_epoch=True)
         self.log("train_focal", sigmoid_focal_loss(inputs=y_pred_logit, targets=y_true, reduction="mean"), on_step=False, on_epoch=True)
         self.log("train_accuracy", (y_pred_label == y_true).float().mean(), on_step=False, on_epoch=True)
@@ -139,7 +144,10 @@ class BaseSegmentor(pl.LightningModule):
 
     def _log_validation_stats(self, y_true, y_pred_logit):
         y_pred_prob = torch.sigmoid(y_pred_logit)
-        y_pred_label = (y_pred_prob > 0.5).float()
+        y_pred_label = (y_pred_prob > self.threshold).float()
+
+        y_true = (y_true > self.threshold).float()
+
         self.log("val_bce", F.binary_cross_entropy_with_logits(input=y_pred_logit, target=y_true))
         self.log("val_focal", sigmoid_focal_loss(inputs=y_pred_logit, targets=y_true, reduction="mean"))
         self.log("val_accuracy", (y_pred_label == y_true).float().mean())

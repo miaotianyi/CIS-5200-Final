@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .mlp import MLP
+
 # adapted from https://github.com/milesial/Pytorch-UNet
 
 class UNet(nn.Module):
@@ -13,6 +15,9 @@ class UNet(nn.Module):
         self.feature_dim = feature_dim
         self.meta_dim = meta_dim
         self.meta_layer = meta_layer
+
+        if meta_layer is not None:
+            self.meta_encoder = MLP(meta_dim, [meta_dim, meta_dim], meta_dim)
 
         in_channels = n_channels + meta_dim if meta_layer == 'begin' else n_channels
         self.inc = DoubleConv(in_channels, self.feature_dim)
@@ -38,12 +43,14 @@ class UNet(nn.Module):
     def forward(self, inputs):
         x, d = inputs
         if self.meta_layer == 'begin':
+            d = self.meta_encoder(d)
             x = self.fuse_inputs(x, d)
         x1 = self.inc(x)
         x2 = self.down1(x1)
         x3 = self.down2(x2)
         x4 = self.down3(x3)
         if self.meta_layer == 'bneck':
+            d = self.meta_encoder(d)
             x5 = self.down4(x4, d)
         else:
             x5 = self.down4(x4)
@@ -52,6 +59,7 @@ class UNet(nn.Module):
         x = self.up3(x, x2)
         x = self.up4(x, x1)
         if self.meta_layer == 'end':
+            d = self.meta_encoder(d)
             x = self.fuse_inputs(x, d)
         logits = self.outc(x)
         return logits
