@@ -61,9 +61,10 @@ class SaltDataset(Dataset):
         x = imread(os.path.join(self.images_dir, filename))     # h, w, c (grayscale but 3 channels)
         x = np.expand_dims(x[:, :, 0], 0)
         y = imread(os.path.join(self.masks_dir, filename))      # h, w (grayscale)
+        y_mean = np.mean(y, axis=-1)                            # h
         y = np.expand_dims(y, 0)
         d = self.depths.loc[item, "z"]
-        return x, d, y
+        return x, d, y_mean, y
 
 
 

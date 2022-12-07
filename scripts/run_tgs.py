@@ -93,6 +93,8 @@ def main():
     # position embedding
     parser.add_argument("--pos_embed", action='store_true')
     parser.add_argument("--embed_dim", type=int, default=16)
+    # use y mean as scalar?
+    parser.add_argument("--use_ymean", action='store_true')
 
     args = parser.parse_args()
     dict_args = vars(args)
@@ -108,8 +110,10 @@ def main():
     val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
     trainer = pl.Trainer.from_argparse_args(args, logger=wandb_logger)
     # trainer = pl.Trainer.from_argparse_args(args) # for PERCH local test
-    
+
     dict_args['meta_dim'] = 1 # for salt dataset we just have scalar depth metadata
+    if args.use_ymean:
+        dict_args['meta_dim'] = 101 # if use y mean as metadata
     dict_args['pos_embed'] = args.pos_embed
     dict_args['embed_dim'] = args.embed_dim
     model = BaseSegmentor(**dict_args)

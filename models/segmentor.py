@@ -12,7 +12,7 @@ from models.ResNet import ResNet, BasicBlock, Bottleneck
 from models.embedding import SinusoidalPositionEmbeddings
 
 class BaseSegmentor(pl.LightningModule):
-    def __init__(self, model, learning_rate, meta_dim, pos_embed, embed_dim, threshold=0.5, **kwargs):
+    def __init__(self, model, learning_rate, meta_dim, pos_embed, embed_dim, use_ymean, threshold=0.5,**kwargs):
         """
         Base segmentor for image segmentation tasks.
 
@@ -41,10 +41,14 @@ class BaseSegmentor(pl.LightningModule):
         """
         super().__init__()
 
+        # if use position embedding
         self.pos_embed = None
         if pos_embed:
             self.pos_embed = SinusoidalPositionEmbeddings(embed_dim)
             meta_dim = embed_dim
+
+        # if use y mean as meta data
+        self.use_ymean = use_ymean
 
         if model == 'trivial':
             self.model = TrivialNet()
@@ -85,8 +89,12 @@ class BaseSegmentor(pl.LightningModule):
 
         # position embedding
         if self.pos_embed is not None:
-            x, d = inputs
+            x, d, _ = inputs
             inputs = (x, self.pos_embed(d))
+
+        if self.use_ymean:
+            x, _, y_mean = inputs
+            inputs = (x, y_mean)
 
         x = self.model(inputs)
         x = torch.sigmoid(x)
@@ -97,8 +105,12 @@ class BaseSegmentor(pl.LightningModule):
 
         # position embedding
         if self.pos_embed is not None:
-            x, d = inputs
+            x, d, _ = inputs
             inputs = (x, self.pos_embed(d))
+
+        if self.use_ymean:
+            x, _, y_mean = inputs
+            inputs = (x, y_mean)
 
         y_pred = self.model(inputs)
         loss = F.binary_cross_entropy_with_logits(input=y_pred, target=y)
@@ -111,9 +123,13 @@ class BaseSegmentor(pl.LightningModule):
 
         # position embedding
         if self.pos_embed is not None:
-            x, d = inputs
+            x, d, _ = inputs
             inputs = (x, self.pos_embed(d))
 
+        if self.use_ymean:
+            x, _, y_mean = inputs
+            inputs = (x, y_mean)
+            
         y_pred_logit = self.model(inputs)
         self._log_validation_stats(y_true=y, y_pred_logit=y_pred_logit)
     
