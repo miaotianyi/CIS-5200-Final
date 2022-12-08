@@ -7,7 +7,7 @@ from .mlp import MLP
 # adapted from https://github.com/milesial/Pytorch-UNet
 
 class UNet(nn.Module):
-    def __init__(self, n_channels=1, n_classes=1, feature_dim=64, bilinear=False, meta_dim=0, meta_layer=None):
+    def __init__(self, n_channels=1, n_classes=1, feature_dim=64, bilinear=False, meta_dim=0, meta_layer=None, d_dim=0):
         super(UNet, self).__init__()
         self.n_channels = n_channels
         self.n_classes = n_classes
@@ -15,9 +15,10 @@ class UNet(nn.Module):
         self.feature_dim = feature_dim
         self.meta_dim = meta_dim
         self.meta_layer = meta_layer
+        self.d_dim = d_dim
 
         if meta_layer is not None:
-            self.meta_encoder = MLP(meta_dim, [meta_dim, meta_dim], meta_dim)
+            self.meta_encoder = MLP(d_dim, [d_dim, d_dim], d_dim)
 
         in_channels = n_channels + meta_dim if meta_layer == 'begin' else n_channels
         self.inc = DoubleConv(in_channels, self.feature_dim)
@@ -36,7 +37,13 @@ class UNet(nn.Module):
 
     def fuse_inputs(self, x, d):
         bneck_dim = (x.shape[-2], x.shape[-1])
-        tiled_d = d.reshape(-1, self.meta_dim, 1, 1).repeat(1, 1, bneck_dim[0], bneck_dim[1])
+        # assume d is averaged over W ! 
+        if self.meta_dim == d.shape[-1]: 
+            tiled_d = d[:, :, None, None].repeat(1, 1, bneck_dim[0], bneck_dim[1]) # NH -> NH11 -> NHHW
+        elif self.meta_dim == 1 and d.shape[-1] == 101:
+            tiled_d = d[:, :, None].repeat(1, 1, bneck_dim[1])[:, None, :, :] # NH -> NHW -> N1HW
+        else:
+            NotImplementedError
         fused_x = torch.cat([x, tiled_d], dim=1) #concatenate along channel dimension
         return fused_x
 
@@ -137,8 +144,15 @@ class DownFuse(nn.Module):
         if self.meta_dim == 0: # if no fuse at all
             fuse_input = x
         else: # if pose or ft is fused
-            tiled_encoding = d.reshape(-1, self.meta_dim, 1, 1).repeat(1, 1, bneck_dim[0], bneck_dim[1])
-            fuse_input = torch.cat([x, tiled_encoding], dim=1) #concatenate along channel dimension
+            # assume d is averaged over W ! 
+            if self.meta_dim == d.shape[-1]: 
+                tiled_d = d[:, :, None, None].repeat(1, 1, bneck_dim[0], bneck_dim[1]) # NH -> NH11 -> NHHW
+            elif self.meta_dim == 1 and d.shape[-1] == 101:
+                tiled_d = d.repeat(1, 1, bneck_dim[1])[:, None, :, :] # NH -> NHW -> N1HW
+            else:
+                NotImplementedError
+            # tiled_encoding = d.reshape(-1, self.meta_dim, 1, 1).repeat(1, 1, bneck_dim[0], bneck_dim[1])
+            fuse_input = torch.cat([x, tiled_d], dim=1) #concatenate along channel dimension
 
         x = self.fuseconvrelu(fuse_input) 
         return x

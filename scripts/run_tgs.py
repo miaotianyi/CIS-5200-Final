@@ -111,9 +111,9 @@ def main():
     trainer = pl.Trainer.from_argparse_args(args, logger=wandb_logger)
     # trainer = pl.Trainer.from_argparse_args(args) # for PERCH local test
 
-    dict_args['meta_dim'] = 1 # for salt dataset we just have scalar depth metadata
-    if args.use_ymean:
-        dict_args['meta_dim'] = 101 # if use y mean as metadata
+    # dict_args['meta_dim'] = 1 # for salt dataset we just have scalar depth metadata
+    # if args.use_ymean:
+    #     dict_args['meta_dim'] = 101 # if use y mean as metadata
     dict_args['pos_embed'] = args.pos_embed
     dict_args['embed_dim'] = args.embed_dim
     model = BaseSegmentor(**dict_args)

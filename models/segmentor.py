@@ -4,6 +4,8 @@ from torch.nn import functional as F
 from torchvision.ops import sigmoid_focal_loss
 import pytorch_lightning as pl
 
+import wandb
+
 from .metrics import confusion_matrix_loss
 
 from models.trivial import TrivialNet
@@ -12,7 +14,7 @@ from models.ResNet import ResNet, BasicBlock, Bottleneck
 from models.embedding import SinusoidalPositionEmbeddings
 
 class BaseSegmentor(pl.LightningModule):
-    def __init__(self, model, learning_rate, meta_dim, pos_embed, embed_dim, use_ymean, threshold=0.5,**kwargs):
+    def __init__(self, model, learning_rate, meta_dim, pos_embed, embed_dim, use_ymean, d_dim, threshold=0.5,**kwargs):
         """
         Base segmentor for image segmentation tasks.
 
@@ -55,11 +57,11 @@ class BaseSegmentor(pl.LightningModule):
         elif model == 'unet':
             self.model = UNet()
         elif model == 'unet_begin':
-            self.model = UNet(meta_layer='begin', meta_dim=meta_dim)
+            self.model = UNet(meta_layer='begin', meta_dim=meta_dim, d_dim=d_dim)
         elif model == 'unet_bneck':
-            self.model = UNet(meta_layer='bneck', meta_dim=meta_dim)
+            self.model = UNet(meta_layer='bneck', meta_dim=meta_dim, d_dim=d_dim)
         elif model == 'unet_end':
-            self.model = UNet(meta_layer='end', meta_dim=meta_dim)
+            self.model = UNet(meta_layer='end', meta_dim=meta_dim, d_dim=d_dim)
         elif model == 'resnet':
             self.model = ResNet(1, BasicBlock, [1, 1, 1, 1], num_classes=1)
         elif model == 'resnet_34':
@@ -81,6 +83,9 @@ class BaseSegmentor(pl.LightningModule):
         parser.add_argument("--model", type=str, default='trivial')
         parser.add_argument("--learning_rate", type=float, default=1e-3)
         parser.add_argument("--normalize_depth", type=bool, default=False)
+        parser.add_argument("--d_dim", type=int, default=1)
+        parser.add_argument("--meta_dim", type=int, default=1)
+
         return parent_parser
     
     def forward(self, inputs):
@@ -112,10 +117,11 @@ class BaseSegmentor(pl.LightningModule):
             x, _, y_mean = inputs
             inputs = (x, y_mean)
 
-        y_pred = self.model(inputs)
-        loss = F.binary_cross_entropy_with_logits(input=y_pred, target=y)
+        y_pred_logit = self.model(inputs)
+        loss = F.binary_cross_entropy_with_logits(input=y_pred_logit, target=y)
         self.log("train_loss", loss)
-        self._log_training_stats(y_true=y, y_pred_logit=y_pred)
+        self._log_training_stats(y_true=y, y_pred_logit=y_pred_logit)
+        # self._log_images(input_im = inputs[0], y_true=y, y_pred_logit=y_pred_logit, prefix="train_")
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -132,7 +138,36 @@ class BaseSegmentor(pl.LightningModule):
             
         y_pred_logit = self.model(inputs)
         self._log_validation_stats(y_true=y, y_pred_logit=y_pred_logit)
+        # self._log_images(input_im = inputs[0], y_true=y, y_pred_logit=y_pred_logit, prefix="val_")
+
     
+    def _log_images(self, input_im, y_true, y_pred_logit, prefix):
+        """
+        Log images to wandb.
+
+        Parameters
+        ----------
+        input_im : torch.Tensor
+            Input image tensor of shape [N, C, H, W].
+        y_true : torch.Tensor
+            True label tensor of shape [N, H, W].
+        y_pred_logit : torch.Tensor
+            Predicted label tensor of shape [N, H, W].
+        """
+        y_pred = torch.sigmoid(y_pred_logit)
+        y_pred_label = (y_pred > self.threshold).float()
+
+        # hack to convert smoothed labels to binary
+        y_true_label = (y_true > self.threshold).float()
+        
+        self.logger.experiment.log({
+            prefix + "input_im": wandb.Image(input_im[0]),
+            prefix + "y_true": wandb.Image(y_true[0]),
+            prefix + "y_pred": wandb.Image(y_pred[0]),
+            prefix + "y_pred_label": wandb.Image(y_pred_label[0]),
+            prefix + "y_true_label": wandb.Image(y_true_label[0]),
+        })
+
     def _log_training_stats(self, y_true, y_pred_logit):
         y_pred_prob = torch.sigmoid(y_pred_logit)
         y_pred_label = (y_pred_prob > self.threshold).float()
