@@ -17,9 +17,13 @@ class UNet(nn.Module):
         self.meta_layer = meta_layer
         self.d_dim = d_dim
 
-        if meta_layer is not None:
+        if meta_layer == 'bneck' and meta_dim != d_dim:
+            # hardcoding the bottleneck dimension
+            d_enc_dim = 6
+            self.meta_encoder = MLP(d_dim, [max(d_dim, d_enc_dim), max(d_dim, d_enc_dim)], d_enc_dim)
+        elif meta_layer is not None:
             self.meta_encoder = MLP(d_dim, [d_dim, d_dim], d_dim)
-
+        
         in_channels = n_channels + meta_dim if meta_layer == 'begin' else n_channels
         self.inc = DoubleConv(in_channels, self.feature_dim)
         self.down1 = Down(self.feature_dim, self.feature_dim*2)
@@ -147,8 +151,9 @@ class DownFuse(nn.Module):
             # assume d is averaged over W ! 
             if self.meta_dim == d.shape[-1]: 
                 tiled_d = d[:, :, None, None].repeat(1, 1, bneck_dim[0], bneck_dim[1]) # NH -> NH11 -> NHHW
-            elif self.meta_dim == 1 and d.shape[-1] == 101:
-                tiled_d = d.repeat(1, 1, bneck_dim[1])[:, None, :, :] # NH -> NHW -> N1HW
+            elif self.meta_dim == 1 and d.shape[-1] == bneck_dim[0]:
+                tiled_d = d[:, :, None].repeat(1, 1, bneck_dim[1])[:, None, :, :] # NH -> NHW -> N1HW
+
             else:
                 NotImplementedError
             # tiled_encoding = d.reshape(-1, self.meta_dim, 1, 1).repeat(1, 1, bneck_dim[0], bneck_dim[1])
