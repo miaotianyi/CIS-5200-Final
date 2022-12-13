@@ -6,13 +6,6 @@ from torch.nn.modules.utils import _pair
 
 class MSConv2d(nn.Module):
     """
-    Multi-source convolution block in 2D.
-
-    Takes in 4 broadcastable tensors of shape
-    ``[n,c1,h,w], [n,c2,h], [n,c3,w], [n,c4]`` respectively,
-    outputs a tensor of shape ``[n, c_out, h_out, w_out]``.
-    Some of these tensors may be omitted by setting ``c_i = 0``.
-
     Motivation: What if a CNN needs to take an image ``[n,c1,h,w]``
     and scalars ``[n,c4]`` as input at the same time?
     For example, each image has some useful metadata associated with it.
@@ -43,6 +36,35 @@ class MSConv2d(nn.Module):
                  stride=1, padding=0, dilation=1,
                  groups=1, bias=True, padding_mode="zeros",
                  device=None, dtype=None):
+        """
+        Multi-source convolution block in 2D.
+
+        Takes in 4 broadcastable tensors of shape
+        ``[n,c1,h,w], [n,c2,h], [n,c3,w], [n,c4]`` respectively,
+        outputs a tensor of shape ``[n, c_out, h_out, w_out]``.
+        Some of these tensors may be omitted by setting in_channels ``c_i = 0``.
+
+        Parameters
+        ----------
+        in_channels : list[int]
+            A list of nchw_channels, nch_channels, ncw_channels, nc_channels.
+
+            They are the numbers of input channels in each of the input tensors.
+            0 indicates that input tensor of such a shape doesn't exist.
+
+        out_channels : int
+            Number of output channels.
+
+        kernel_size
+        stride
+        padding
+        dilation
+        groups
+        bias
+        padding_mode
+        device
+        dtype
+        """
         super(MSConv2d, self).__init__()
         # initialize hyperparameters
         self.in_channels = tuple(in_channels)
