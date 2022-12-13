@@ -128,24 +128,20 @@ class MSConv2d(nn.Module):
         else:
             self.nc_block = None
 
-    def forward(self, *args):
+    def forward(self, nchw, nch=None, ncw=None, nc=None):
         # tensor args are in order of (nchw, nch, ncw, nc), with possible omission
-        i = 0
         y = None     # output tensor
         if self.nchw_block is not None:
-            x = self.nchw_block(args[i])
+            x = self.nchw_block(nchw)
             y = x if y is None else x + y
-            i += 1
         if self.nch_block is not None:
-            x = self.nch_block(args[i]).unsqueeze(3)    # nch -> nch1
+            x = self.nch_block(nch).unsqueeze(3)    # nch -> nch1
             y = x if y is None else x + y
-            i += 1
         if self.ncw_block is not None:
-            x = self.ncw_block(args[i]).unsqueeze(2)    # ncw -> nc1w
+            x = self.ncw_block(ncw).unsqueeze(2)    # ncw -> nc1w
             y = x if y is None else x + y
-            i += 1
         if self.nc_block is not None:   # nc -> nc11
-            x = self.nc_block(args[i]).unsqueeze(-1).unsqueeze(-1)
+            x = self.nc_block(nc).unsqueeze(-1).unsqueeze(-1)
             y = x if y is None else x + y
         return y
 
