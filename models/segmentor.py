@@ -83,8 +83,8 @@ class BaseSegmentor(pl.LightningModule):
         parser.add_argument("--model", type=str, default='trivial')
         parser.add_argument("--learning_rate", type=float, default=1e-3)
         parser.add_argument("--normalize_depth", type=bool, default=False)
-        parser.add_argument("--d_dim", type=int, default=1)
-        parser.add_argument("--meta_dim", type=int, default=1)
+        parser.add_argument("--d_dim", type=int, default=0)
+        parser.add_argument("--meta_dim", type=int, default=0)
 
         return parent_parser
     
@@ -116,6 +116,9 @@ class BaseSegmentor(pl.LightningModule):
         if self.use_ymean:
             x, _, y_mean = inputs
             inputs = (x, y_mean)
+        else:
+            x, d, _ = inputs
+            inputs = (x, d)
 
         y_pred_logit = self.model(inputs)
         loss = F.binary_cross_entropy_with_logits(input=y_pred_logit, target=y)
@@ -139,7 +142,6 @@ class BaseSegmentor(pl.LightningModule):
         y_pred_logit = self.model(inputs)
         self._log_validation_stats(y_true=y, y_pred_logit=y_pred_logit)
         # self._log_images(input_im = inputs[0], y_true=y, y_pred_logit=y_pred_logit, prefix="val_")
-
     
     def _log_images(self, input_im, y_true, y_pred_logit, prefix):
         """
